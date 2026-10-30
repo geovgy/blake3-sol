@@ -1,0 +1,108 @@
+#!/usr/bin/env python3
+"""Generate reproducible vectors with the exact servil release and run Noir.
+
+Usage: python3 scripts/vectors.py [--check] [--noir]
+Build reference/servil first. --check verifies committed vectors byte for byte.
+"""
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+
+ROOT = Path(__file__).resolve().parents[1]
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--check", action="store_true")
+parser.add_argument("--noir", action="store_true")
+args = parser.parse_args()
+
+lengths = list(range(9)) + [9, 15, 16, 17, 31, 32, 33, 34, 63, 64, 65,
+                          95, 96, 97, 127, 128, 129, 255, 256, 257, 511, 512, 513, 1024, 1025]
+inputs = []
+for n in lengths:
+    patterns = [bytes(i % 251 for i in range(n * 32)),
+                b"".join(hashlib.sha256(f"blake3-sol:{n}:{i}".encode()).digest() for i in range(n))]
+    if n <= 34:
+        patterns += [bytes(n * 32), b"\xff" * (n * 32)]
+    for data in patterns:
+        if data not in inputs:
+            inputs.append(data)
+
+reference = ROOT / "reference/servil/target/release/blake3-reference"
+output = subprocess.run([str(reference)], input="".join(x.hex() + "\n" for x in inputs),
+                        text=True, capture_output=True, check=True).stdout.splitlines()
+assert len(output) == len(inputs)
+vectors = [{"digest": digest, "input": "0x" + data.hex()} for data, digest in zip(inputs, output)]
+fixture = json.dumps({"count": len(vectors), "reference": {
+    "repository": "https://github.com/johnservil/BLAKE3",
+    "tag": "v0.8.0+b3c5efc7c975d903762dea809066f7c0a0603861",
+    "commit": "b5b988d8982bea9490c38c79ec4b8c5c2428270c",
+    "encoding": "concatenated uint256 big-endian bytes; no array length prefix",
+}, "vectors": vectors}, indent=2) + "\n"
+path = ROOT / "test/vectors/reference.json"
+if args.check:
+    assert path.read_text() == fixture, "committed vectors differ from the release"
+else:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(fixture)
+print(f"Verified {len(vectors)} release vectors; up to {max(map(len, inputs))} input bytes.")
+
+# Raw-byte cases exercise every short tail length and both sides of tree
+# boundaries. Keep the original word-array fixture independently reproducible.
+byte_lengths = list(range(130)) + [255, 256, 257, 511, 512, 513, 1023, 1024,
+    1025, 1026, 2047, 2048, 2049, 3071, 3072, 3073, 4095, 4096, 4097,
+    8191, 8192, 8193, 32767, 32768, 32769]
+byte_inputs = []
+for n in byte_lengths:
+    byte_inputs += [bytes(i % 251 for i in range(n)),
+        b"".join(hashlib.sha256(f"blake3-sol:bytes:{n}:{i}".encode()).digest()
+                 for i in range((n + 31) // 32))[:n]]
+byte_inputs += [b"abc"] + [bytes(range(1, n + 1)) for n in range(1, 9)]
+byte_inputs = list(dict.fromkeys(byte_inputs))
+byte_output = subprocess.run([str(reference)], input="".join(x.hex() + "\n" for x in byte_inputs),
+                            text=True, capture_output=True, check=True).stdout.splitlines()
+assert len(byte_output) == len(byte_inputs)
+byte_vectors = [{"digest": digest, "input": "0x" + data.hex()}
+                for data, digest in zip(byte_inputs, byte_output)]
+byte_fixture = json.dumps({"count": len(byte_vectors), "reference": {
+    **json.loads(fixture)["reference"], "encoding": "raw bytes; no length prefix or zero padding",
+}, "vectors": byte_vectors}, indent=2) + "\n"
+byte_path = ROOT / "test/vectors/bytes.json"
+if args.check:
+    assert byte_path.read_text() == byte_fixture, "committed byte vectors differ from the release"
+else:
+    byte_path.write_text(byte_fixture)
+print(f"Verified {len(byte_vectors)} raw-byte release vectors; up to {max(map(len, byte_inputs))} input bytes.")
+
+if args.noir:
+    # Noir rc.3's black box supports at most one 1024-byte chunk. Inputs are
+    # witnesses loaded from Prover.toml, so nonempty hashes cannot be folded.
+    unique = {v["input"]: v for v in vectors + byte_vectors}
+    selected = [v for v in unique.values() if len(bytes.fromhex(v["input"][2:])) <= 1024]
+    noir = ROOT / "reference/noir"
+    (noir / "src").mkdir(parents=True, exist_ok=True)
+    (noir / "Nargo.toml").write_text('[package]\nname = "blake3_crosscheck"\ntype = "bin"\nauthors = [""]\ncompiler_version = ">=0.36.0"\n\n[dependencies]\n')
+    params, body, prover = [], [], []
+    for i, vector in enumerate(selected):
+        data = bytes.fromhex(vector["input"][2:])
+        digest = bytes.fromhex(vector["digest"][2:])
+        params += [f"e{i}: pub [u8; 32]"]
+        if data:
+            params += [f"i{i}: [u8; {len(data)}]"]
+            body.append(f"    assert_eq(std::hash::blake3(i{i}), e{i});")
+            prover += [f"i{i} = {list(data)}"]
+        else:
+            body.append(f"    assert_eq(std::hash::blake3([0 as u8; 0]), e{i});")
+        prover += [f"e{i} = {list(digest)}"]
+    (noir / "src/main.nr").write_text("// Generated by scripts/vectors.py --noir; runtime witness inputs.\nfn main(\n    " + ",\n    ".join(params) + "\n) {\n" + "\n".join(body) + "\n}\n")
+    (noir / "Prover.toml").write_text("\n".join(prover) + "\n")
+    nargo = shutil.which("nargo") or os.path.expanduser("~/.nargo/bin/nargo")
+    version = subprocess.check_output([nargo, "--version"], text=True)
+    assert version.splitlines()[0] == "nargo version = 1.0.0-rc.3", "Use the tested Nargo 1.0.0-rc.3"
+    subprocess.run([nargo, "execute"], cwd=noir, check=True)
+    acir = subprocess.check_output([nargo, "compile", "--print-acir"], cwd=noir, text=True)
+    calls = acir.count("BLACKBOX::BLAKE3")
+    assert calls == len(selected) - 1, f"Expected {len(selected) - 1} runtime BLAKE3 opcodes, got {calls}"
+    print(f"Noir matched {len(selected)} digests (0–1024 bytes), including {calls} runtime BLAKE3 opcodes and the empty hash.")

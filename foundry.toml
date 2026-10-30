@@ -1,0 +1,22 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+solc_version = "0.8.30"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 1000000
+via_ir = true
+fs_permissions = [{ access = "read", path = "./test/vectors" }]
+
+[profile.default.fuzz]
+runs = 256
+
+[profile.oracle]
+test = "oracle-test"
+ffi = true
+
+[profile.oracle.fuzz]
+runs = 128
+
+# See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

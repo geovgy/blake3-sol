@@ -1,0 +1,63 @@
+name: CI
+
+permissions: {}
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    name: Foundry project
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.8.5
+
+      - name: Show Forge version
+        run: forge --version
+
+      - name: Run Forge fmt
+        run: forge fmt --check src test oracle-test
+
+      - name: Check generated source
+        run: python3 scripts/generate.py --check
+
+      - name: Run Forge build
+        run: forge build --sizes
+
+      - name: Run Forge tests
+        run: forge test --gas-snapshot-check true -vvv
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal
+          rustup default 1.99.1
+
+      - name: Build the pinned release oracle
+        run: cargo build --release --locked --manifest-path reference/servil/Cargo.toml
+
+      - name: Differential fuzzing against the release
+        run: FOUNDRY_PROFILE=oracle forge test -vvv
+
+      - name: Install pinned Noir
+        shell: bash
+        run: |
+          curl -fsSL https://github.com/noir-lang/noir/releases/download/v1.0.0-rc.3/noir-x86_64-unknown-linux-gnu.tar.gz -o /tmp/noir.tar.gz
+          echo '5792dd962afce1eed834570f95d9f72cc4a09d45cd846d3b80b7a57392732973  /tmp/noir.tar.gz' | sha256sum --check
+          mkdir -p "$HOME/.nargo/bin"
+          tar -xzf /tmp/noir.tar.gz -C "$HOME/.nargo/bin"
+          echo "$HOME/.nargo/bin" >> "$GITHUB_PATH"
+
+      - name: Verify release vectors and execute Noir black boxes
+        run: python3 scripts/vectors.py --check --noir

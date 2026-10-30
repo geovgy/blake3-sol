@@ -1,0 +1,8 @@
+[package]
+name = "blake3-reference"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+blake3-servil = { git = "https://github.com/johnservil/BLAKE3", rev = "b5b988d8982bea9490c38c79ec4b8c5c2428270c" }
