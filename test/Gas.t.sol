@@ -14,24 +14,25 @@ contract GasTest is Test {
     function testGasFixed1() public {
         h.hash1([uint256(1)]);
         uint256 used = vm.snapshotGasLastFrame("external", "fixed1");
-        assertLt(used, 15000);
+        assertLt(used, 10000);
     }
 
     function testGasFixed2() public {
         h.hash2([uint256(1), 2]);
         uint256 used = vm.snapshotGasLastFrame("external", "fixed2");
-        assertLt(used, 15000);
+        assertLt(used, 10000);
     }
 
     function testGasFixed3() public {
         h.hash3([uint256(1), 2, 3]);
         uint256 used = vm.snapshotGasLastFrame("external", "fixed3");
-        assertLt(used, 15000);
+        assertLt(used, 14000);
     }
 
     function testGasFixed4() public {
         h.hash4([uint256(1), 2, 3, 4]);
-        vm.snapshotGasLastFrame("external", "fixed4");
+        uint256 used = vm.snapshotGasLastFrame("external", "fixed4");
+        assertLt(used, 14000);
     }
 
     function testGasFixed5() public {
@@ -109,6 +110,8 @@ contract GasTest is Test {
             x[i] = i + 1;
         }
         h.hashDynamic(x);
-        vm.snapshotGasLastFrame("external", name);
+        uint256 used = vm.snapshotGasLastFrame("external", name);
+        if (n <= 2) assertLt(used, 10000);
+        else if (n <= 4) assertLt(used, 14000);
     }
 }
