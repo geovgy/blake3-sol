@@ -180,10 +180,12 @@ contract BytesGasTest is Test {
         uint256 result = BLAKE3Lib.hash(data);
         uint256 used = vm.stopSnapshotGas();
         assertEq(result, expected);
-        if (data.length <= 96) assertLt(used, 15000);
+        if (data.length <= 64) assertLt(used, 10000);
+        else if (data.length <= 128) assertLt(used, 13000);
         uint256 externalResult = h.hashBytes(data);
         uint256 externalUsed = vm.snapshotGasLastFrame("external_bytes", name);
         assertEq(externalResult, expected);
-        if (data.length <= 96) assertLt(externalUsed, 15000);
+        if (data.length <= 64) assertLt(externalUsed, 10000);
+        else if (data.length <= 128) assertLt(externalUsed, 14000);
     }
 }

@@ -11,7 +11,7 @@ contract LibraryGasTest is Test {
         uint256 result = BLAKE3Lib.hash(x);
         uint256 used = vm.stopSnapshotGas();
         assertEq(result, uint256(0x55bbfb5b05f80543bd662a7b7a74980a2992612798087fa24e1fc86b8e8508e4));
-        assertLt(used, 15000);
+        assertLt(used, 10000);
     }
 
     function testLibraryGasFixed2() public {
@@ -20,7 +20,7 @@ contract LibraryGasTest is Test {
         uint256 result = BLAKE3Lib.hash(x);
         uint256 used = vm.stopSnapshotGas();
         assertEq(result, uint256(0xa1852311a98ff4c66e0642c644a61d02a5ea1a4ab530a19cb83a82e42ff8011f));
-        assertLt(used, 15000);
+        assertLt(used, 10000);
     }
 
     function testLibraryGasFixed3() public {
@@ -29,15 +29,16 @@ contract LibraryGasTest is Test {
         uint256 result = BLAKE3Lib.hash(x);
         uint256 used = vm.stopSnapshotGas();
         assertEq(result, uint256(0x5d2c070292048b013937f401e0116af8e6e983057d2b63f922cc910adae9710f));
-        assertLt(used, 15000);
+        assertLt(used, 13000);
     }
 
     function testLibraryGasFixed4() public {
         uint256[4] memory x = [uint256(1), 2, 3, 4];
         vm.startSnapshotGas("library", "fixed4");
         uint256 result = BLAKE3Lib.hash(x);
-        vm.stopSnapshotGas();
+        uint256 used = vm.stopSnapshotGas();
         assertEq(result, uint256(0x4a0f1814912f4ce727461aa4fb8786c087b571961dde489e6d4aa794ca9ebff7));
+        assertLt(used, 13000);
     }
 
     function testLibraryGasFixed5() public {
@@ -116,7 +117,9 @@ contract LibraryGasTest is Test {
         string memory name = string.concat("dynamic", vm.toString(n));
         vm.startSnapshotGas("library", name);
         uint256 result = BLAKE3Lib.hash(x);
-        vm.stopSnapshotGas();
+        uint256 used = vm.stopSnapshotGas();
         assertEq(result, expected);
+        if (n <= 2) assertLt(used, 10000);
+        else if (n <= 4) assertLt(used, 13000);
     }
 }

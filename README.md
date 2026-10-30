@@ -2,7 +2,7 @@
 
 An unkeyed BLAKE3-256 library with `internal pure` overloads for `uint256[1]`
 through `uint256[8]`, `uint256[]`, and `bytes`. The measured library costs for
-one, two, and three words are **7,043**, **7,297**, and **13,777 gas**.
+one, two, and three words are **6,256**, **6,400**, and **12,203 gas**.
 
 ```solidity
 import {BLAKE3Lib} from "./src/BLAKE3Lib.sol";
@@ -79,15 +79,15 @@ by [test/LibraryGas.t.sol](test/LibraryGas.t.sol).
 
 | Words | Input bytes | `uint256[n]` | `uint256[]` |
 |---:|---:|---:|---:|
-| 0 | 0 | — | 6,842 |
-| 1 | 32 | 7,043 | 7,098 |
-| 2 | 64 | 7,297 | 7,346 |
-| 3 | 96 | 13,777 | 13,832 |
-| 4 | 128 | 14,022 | 14,080 |
-| 5 | 160 | 20,511 | 20,566 |
-| 6 | 192 | 20,750 | 20,814 |
-| 7 | 224 | 27,242 | 27,300 |
-| 8 | 256 | 27,490 | 27,548 |
+| 0 | 0 | — | 103 |
+| 1 | 32 | 6,256 | 6,402 |
+| 2 | 64 | 6,400 | 6,546 |
+| 3 | 96 | 12,203 | 12,409 |
+| 4 | 128 | 12,350 | 12,553 |
+| 5 | 160 | 18,645 | 18,748 |
+| 6 | 192 | 18,783 | 18,892 |
+| 7 | 224 | 24,713 | 24,816 |
+| 8 | 256 | 24,857 | 24,960 |
 
 For contract integration, the next table measures the complete external
 function frame in [HashHarness](test/helpers/HashHarness.sol), including its
@@ -97,22 +97,34 @@ with `forge test --gas-report`; see [snapshots/external.json](snapshots/external
 
 | Words | Fixed array function | Dynamic array function |
 |---:|---:|---:|
-| 0 | — | 7,283 |
-| 1 | 7,427 | 7,607 |
-| 2 | 7,796 | 7,923 |
-| 3 | 14,429 | 14,477 |
-| 4 | 14,635 | 14,793 |
-| 5 | 21,286 | 21,347 |
-| 6 | 21,656 | 21,663 |
-| 7 | 28,103 | 28,217 |
-| 8 | 28,507 | 28,533 |
-| 32 | — | 110,976 |
-| 33 | — | 124,009 |
-| 64 | — | 227,383 |
+| 0 | — | 529 |
+| 1 | 6,635 | 6,896 |
+| 2 | 6,891 | 7,108 |
+| 3 | 12,851 | 13,039 |
+| 4 | 12,953 | 13,251 |
+| 5 | 19,399 | 19,517 |
+| 6 | 19,674 | 19,729 |
+| 7 | 25,559 | 25,721 |
+| 8 | 25,859 | 25,933 |
+| 32 | — | 100,383 |
+| 33 | — | 112,837 |
+| 64 | — | 206,115 |
 
-The array benchmark suites enforce a **15,000 gas ceiling** on fixed sizes 1–3.
-The harness exposing all ten overloads has a 15,337-byte runtime, below the
-24,576-byte EIP-170 limit. Callers with fewer entry points can be smaller.
+The array benchmarks enforce a **10,000 gas ceiling** through two words,
+then **13,000 gas** for internal calls and **14,000 gas** for external functions
+through four words. The harness exposing all ten overloads has a 16,497-byte
+runtime, below the 24,576-byte EIP-170 limit.
+
+Inputs up to 64 bytes meet the intended 10,000-gas upper target;
+65–128 byte inputs still require more than 10,000 gas.
+For comparison, the previous fixed-array costs and the current measurements are:
+
+| Words | Previous library gas | Current library gas | Reduction |
+|---:|---:|---:|---:|
+| 1 | 7,043 | 6,256 | 11.2% |
+| 2 | 7,297 | 6,400 | 12.3% |
+| 3 | 13,777 | 12,203 | 11.4% |
+| 4 | 14,022 | 12,350 | 11.9% |
 
 ### Bytes and compact encoding
 
@@ -138,9 +150,9 @@ one region, using the expressions above and the values 1, 2, 3:
 
 | Input | Bytes | Gas including construction |
 |---|---:|---:|
-| `[uint256(1), 2, 3]` | 96 | 13,874 |
-| `abi.encodePacked(uint256(1), uint256(2), uint256(3))` | 96 | 13,992 |
-| `abi.encodePacked(uint8(1), uint8(2), uint8(3))` | 3 | 7,278 |
+| `[uint256(1), 2, 3]` | 96 | 12,083 |
+| `abi.encodePacked(uint256(1), uint256(2), uint256(3))` | 96 | 12,557 |
+| `abi.encodePacked(uint8(1), uint8(2), uint8(3))` | 3 | 6,563 |
 
 The compact example saves about **48%**, including the encoding work. Values
 are recorded in [snapshots/construction.json](snapshots/construction.json).
@@ -152,24 +164,25 @@ also check the identical full-word encodings used by the array benchmarks.
 
 | Byte length | Library hash | External function |
 |---:|---:|---:|
-| 0 | 6,836 | 7,378 |
-| 3 | 7,127 | 7,675 |
-| 24 | 7,127 | 7,675 |
-| 32 | 7,092 | 7,640 |
-| 33 | 7,407 | 7,961 |
-| 64 | 7,340 | 7,894 |
-| 65 | 13,861 | 14,421 |
-| 96 | 13,826 | 14,386 |
-| 128 | 14,074 | 14,640 |
-| 256 | 27,542 | 28,132 |
-| 1024 | 108,350 | 109,087 |
-| 1025 | 121,344 | 122,093 |
+| 0 | 94 | 624 |
+| 3 | 6,412 | 6,951 |
+| 24 | 6,412 | 6,951 |
+| 32 | 6,390 | 6,929 |
+| 33 | 6,575 | 7,120 |
+| 64 | 6,534 | 7,079 |
+| 65 | 12,419 | 12,970 |
+| 96 | 12,397 | 12,948 |
+| 128 | 12,541 | 13,098 |
+| 256 | 24,887 | 25,532 |
+| 1024 | 97,703 | 98,494 |
+| 1025 | 110,107 | 110,908 |
 
 [test/BytesGas.t.sol](test/BytesGas.t.sol) records these results in
 [snapshots/library_bytes.json](snapshots/library_bytes.json) and
 [snapshots/external_bytes.json](snapshots/external_bytes.json). The small extra
 cost for a partial word is the mask that discards bytes past the logical end.
-All bytes benchmarks through 96 input bytes enforce a 15,000 gas ceiling.
+Bytes benchmarks enforce a 10,000 gas ceiling through 64 bytes, then
+13,000 gas internally and 14,000 gas externally through 128 bytes.
 
 ## Correctness checks
 
@@ -205,6 +218,18 @@ The checks cover:
   **128 cases checking all eight fixed overloads**, and **128 raw-byte cases**
   of up to 8,193 bytes against the native oracle: 1,280 native comparisons per
   integration run.
+- **128 additional short-byte fuzz cases** with dirty padding, plus **390 native
+  comparisons** covering each length from 0–129 with zero, all-ones, and alternating
+  `0x55`/`0xaa` bytes. Both internal and external bytes functions must match the
+  release and preserve the complete input allocation, including dirty padding.
+  The default oracle profile makes **1,798 native comparisons** in total.
+
+The optimized implementation also passes this larger run with **6,022 native
+comparisons**, including all eight fixed overloads:
+
+```sh
+FOUNDRY_PROFILE=oracle forge test --fuzz-runs 512 --fuzz-seed 0xb1a3 -vv
+```
 
 [Noir's standard-library black box](https://noir-lang.org/docs/libraries/standard_library/cryptographic_primitives/hashes#blake3)
 is checked independently with Nargo **1.0.0-rc.3**, compiler commit
@@ -228,16 +253,27 @@ These checks execute the black-box solver; they do not generate a ZK proof.
 
 [src/BLAKE3Lib.sol](src/BLAKE3Lib.sol) uses Yul throughout the hash engine.
 Four independent 32-bit lanes occupy the lower halves of four 64-bit lanes
-inside each EVM word. The spare bits isolate addition carries. Multiplication
-by `2**32 + 1`, followed by a shift and mask, rotates all four lanes at once.
-The seven rounds are unrolled, with message permutations resolved by the
-generator. Two EVM words retain the complete 64-byte message block.
+inside each EVM word, in descending order at offsets 192, 128, 64, and 0.
+The spare bits isolate addition carries. Multiplication by `2**32 + 1`,
+followed by a shift and mask, rotates all four lanes at once. Each addition
+must discard its carry bits before the next XOR and rotation.
 
-The explicit compression workspace is 160 bytes. The iterative chunk tree
-uses another 64 bytes per stacked chaining value, with logarithmic space in
-the input length. The Solidity compiler may allocate additional spill slots.
-Scratch storage begins at the free-memory pointer, is temporary, and does not
-modify the input array, free-memory pointer, or zero slot.
+The generator resolves all seven message permutations and the diagonal lane
+rotations. It keeps message words in their original order and swaps bytes
+inside each u32 on input and output. This removes the full-word reversal
+stages. The mixing function uses a measured argument and return order to
+reduce EVM stack shuffling.
+
+Compression takes its block and chaining values in registers. The chunk loop
+processes full nonfinal blocks before a separate final block, retaining
+`CHUNK_END` on exact block boundaries. Inputs through 128 bytes use one or two
+compressions with counter zero and the appropriate root flags; empty input
+returns the standard digest constant.
+
+The iterative chunk tree uses 64 bytes per stacked chaining value, with
+logarithmic space in the input length. The compiler may reserve spill slots.
+Temporary tree storage starts at the free-memory pointer; the library preserves
+the input, free-memory pointer, and zero slot.
 
 ```sh
 python3 scripts/generate.py
