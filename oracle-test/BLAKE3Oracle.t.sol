@@ -33,6 +33,21 @@ contract BLAKE3OracleTest is Test {
         assertEq(BLAKE3Lib.hash(x), _reference(x));
     }
 
+    function testFuzzReleaseRepeatedWords(bytes32 word, uint16 size) public {
+        uint256 n = bound(size, 0, 1025);
+        uint256[] memory x = new uint256[](n);
+        for (uint256 i; i < n; ++i) {
+            x[i] = uint256(word);
+        }
+        uint256 expected = _assertDirtyBytes(abi.encodePacked(x));
+        assertEq(BLAKE3Lib.hash(x), expected);
+        assertEq(h.hashDynamic(x), expected);
+    }
+
+    function testFuzzReleaseArbitraryBytes(bytes memory data) public {
+        _assertDirtyBytes(data);
+    }
+
     function testFuzzReleaseBytes(bytes32 seed, uint16 size) public {
         uint256 n = bound(size, 0, 8193);
         bytes memory data = new bytes(n);
@@ -69,8 +84,8 @@ contract BLAKE3OracleTest is Test {
         }
     }
 
-    function _assertDirtyBytes(bytes memory data) private {
-        uint256 expected = _referenceBytes(data);
+    function _assertDirtyBytes(bytes memory data) private returns (uint256 expected) {
+        expected = _referenceBytes(data);
         bytes memory dirty = bytes.concat(data, abi.encodePacked(type(uint256).max));
         bytes32 beforeHash = keccak256(dirty);
         uint256 n = data.length;

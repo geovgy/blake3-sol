@@ -222,13 +222,17 @@ The checks cover:
   comparisons** covering each length from 0–129 with zero, all-ones, and alternating
   `0x55`/`0xaa` bytes. Both internal and external bytes functions must match the
   release and preserve the complete input allocation, including dirty padding.
-  The default oracle profile makes **1,798 native comparisons** in total.
+- **128 arbitrary-byte fuzz cases** and **128 repeated-word cases** through
+  1,025 words, checking internal and external entry points against the release.
+  The base `BLAKE3OracleTest` contract makes **2,054 native comparisons** with
+  the default oracle profile.
 
-The optimized implementation also passes this larger run with **6,022 native
-comparisons**, including all eight fixed overloads:
+The independent review ran each of the six base fuzz properties **4,096 times**,
+plus the deterministic tail cases: **53,638 native comparisons** passed.
+Repeat a campaign of this size with:
 
 ```sh
-FOUNDRY_PROFILE=oracle forge test --fuzz-runs 512 --fuzz-seed 0xb1a3 -vv
+FOUNDRY_PROFILE=oracle forge test --match-contract BLAKE3OracleTest --fuzz-runs 4096 --fuzz-seed 0x6b9369d -vv
 ```
 
 [Noir's standard-library black box](https://noir-lang.org/docs/libraries/standard_library/cryptographic_primitives/hashes#blake3)
@@ -248,6 +252,52 @@ in the compiled circuit. The empty input is a local constant because Noir
 rejects empty array parameters. The selected Noir version limits the black box
 to 1,024 bytes; longer Solidity inputs are checked against the release.
 These checks execute the black-box solver; they do not generate a ZK proof.
+
+### Independent arithmetic and memory verification
+
+[scripts/verify_packed.py](scripts/verify_packed.py) parses the committed Yul
+without importing the generator. It checks the code against scalar BLAKE3
+operations and a separate Python BLAKE3 implementation:
+
+- **220 Z3 equivalence proofs** cover packed additions, rotations, mixing
+  transitions, byte order, compaction, 28 message gathers, 42 lane permutations,
+  and both loader outputs at each size from 0–64 with arbitrary dirty padding.
+  The verifier also checks round order, function signatures, and skipped loads.
+- **1,000 scalar compression cases** exercise arbitrary messages, chaining
+  values, flags, and 64-bit counters, including carries across `2**32`.
+- **1,152 scalar chunk cases** cover each final length from 0–64 and additional
+  block boundaries, with counters through `2**64 - 1`.
+- **1,027 whole-hash cases** match `blake3==1.0.11` through 66,625 bytes,
+  including short zero/random/all-ones inputs and uneven tree boundaries.
+
+[oracle-test/IndependentMemory.t.sol](oracle-test/IndependentMemory.t.sol) checks
+the compiled Solidity with valid misaligned input pointers. All **38 tests**
+pass with 512 runs per fuzz property. They cover all 32 byte alignments at 16
+length transitions, all ten overloads, dirty temporary memory, interleaved
+allocations, and unchanged inputs, free-memory pointer, and zero slot.
+The **35 deep-tree fixtures** extend through **1,049,601 bytes**, including
+uneven trees and chunk counters through 1,025. Their generator sends input to
+the pinned native oracle over stdin to avoid the operating system's argument
+length limit.
+
+The two memory fuzz properties also passed 64 runs each with Solidity 0.8.30
+legacy optimized compilation, Solidity 0.8.30 via IR without optimization, and
+Solidity 0.8.24 via IR with optimization. Gas measurements use the default
+settings in `foundry.toml`.
+
+```sh
+python3 -m venv /tmp/blake3-verification
+/tmp/blake3-verification/bin/pip install -r reference/requirements-verification.txt
+/tmp/blake3-verification/bin/python scripts/verify_packed.py --smt-only
+/tmp/blake3-verification/bin/python scripts/verify_packed.py --smt --cases 1000
+/tmp/blake3-verification/bin/python scripts/independent-memory-vectors.py --check
+FOUNDRY_PROFILE=oracle forge test --match-contract IndependentMemoryTest --fuzz-runs 512 --fuzz-seed 0xdecaf -vv
+```
+
+The SMT proofs establish the packed-core and loader equivalence under the lane
+invariant, trusting the verifier and Z3. Whole-tree and compiled-code correctness
+have deterministic and fuzz coverage. Neither independent reviewer found a
+library defect.
 
 ## Implementation and regeneration
 
@@ -282,4 +332,5 @@ forge fmt --check src test oracle-test
 ```
 
 [CI](.github/workflows/test.yml) runs formatting, regeneration checks, Foundry
-tests and gas snapshots, native differential fuzzing, and Noir execution.
+tests and gas snapshots, native differential fuzzing, packed arithmetic proofs,
+deep-tree fixture checks, and Noir execution.

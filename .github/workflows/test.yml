@@ -47,6 +47,16 @@ jobs:
       - name: Build the pinned release oracle
         run: cargo build --release --locked --manifest-path reference/servil/Cargo.toml
 
+      - name: Install independent verification dependencies
+        run: |
+          python3 -m venv /tmp/blake3-verification
+          /tmp/blake3-verification/bin/pip install -r reference/requirements-verification.txt
+
+      - name: Verify packed arithmetic and deep-tree fixtures
+        run: |
+          /tmp/blake3-verification/bin/python scripts/verify_packed.py --smt-only
+          /tmp/blake3-verification/bin/python scripts/independent-memory-vectors.py --check
+
       - name: Differential fuzzing against the release
         run: FOUNDRY_PROFILE=oracle forge test -vvv
 
